@@ -15,6 +15,7 @@ Prometheus exporter for FortiGate® firewalls.
   * [Usage](#usage)
     + [Dynamic configuration](#dynamic-configuration)
     + [Available CLI parameters](#available-cli-parameters)
+    + [Probe health](#probe-health)
     + [Fortigate Configuration](#fortigate-configuration)
     + [Prometheus Configuration](#prometheus-configuration)
     + [Docker](#docker)
@@ -154,6 +155,44 @@ fs124e:
 | -extra-ca-certs | (none) | comma-separated files containing extra PEMs to trust for TLS connections in addition to the system trust store |
 | -max-bgp-paths  | 10000  | Sets maximum amount of BGP paths to fetch, value is per IP stack version (IPv4 & IPv6) |
 | -max-vpn-users  | 0      | Sets maximum amount of VPN users to fetch (0 eq. none by default) |
+| -max-concurrency | 4     | How many probes run in parallel against a single target (1 = sequential, as in previous versions) |
+| -unavailable-recheck-interval | 1h | How long probes whose API endpoint is not available on a target are skipped before they are tried again (0 = try on every scrape), see [Probe health](#probe-health) |
+
+### Probe health
+
+Not every FortiGate offers every API endpoint: models without hardware sensors
+answer `system/sensor-info` with `404`, and FortiOS answers the BGP and OSPF
+monitor endpoints with `500` when the routing protocol is not configured.
+
+Such probes are reported as **unavailable** instead of failed, so they no
+longer set `probe_success` to `0`. They are logged once and then skipped for
+`-unavailable-recheck-interval` to save API calls on the FortiGate.
+
+| HTTP status | treated as unavailable for |
+|---|---|
+| 404 Not Found, 424 Failed Dependency | all probes |
+| 500 Internal Server Error | `BGP/*`, `OSPF/*` |
+
+Every other error still marks the probe as failed. Per-probe metrics show
+exactly what happened:
+
+| metric | description |
+|---|---|
+| `fortigate_exporter_probe_success{probe}` | `1` if the probe succeeded, `0` if it failed (not reported for unavailable probes) |
+| `fortigate_exporter_probe_unavailable{probe}` | `1` if the probe's endpoint is not available on the target |
+| `fortigate_exporter_probe_duration_seconds{probe}` | runtime of the probe |
+
+```promql
+# which probes are failing?
+fortigate_exporter_probe_success == 0
+# slowest probes
+topk(5, fortigate_exporter_probe_duration_seconds)
+```
+
+Probes run in parallel (`-max-concurrency`), so a scrape takes roughly as long
+as the slowest probe instead of the sum of all probes. A probe that panics is
+reported as failed instead of aborting the whole scrape, and inconsistent
+metrics from a single probe no longer turn the whole scrape into an HTTP 500.
 
 ### FortiGate Configuration
 
@@ -328,7 +367,8 @@ prometheus_fortigate_exporter:
 This is a collection of known issues that for some reason cannot be fixed,
 but might be possible to work around.
 
- * Probing causing [httpsd memory leak in FortiOS 6.2.x](https://github.com/prometheus-community/fortigate_exporter/issues/62) ([Workaround](https://github.com/prometheus-community/fortigate_exporter/issues/62#issuecomment-798602061))
+ * Probing causing [httpsd memory leak in FortiOS 6.2.x](https://github.com/prometheus-community/fortigate_exporter/issues/62) ([Workaround](https://github.com/prometheus-community/fortigate_exporter/issues/62#issuecomment-798602061)).
+   On such systems consider `-max-concurrency 1` to keep the load on `httpsd` as low as before.
 
 ## Missing Metrics?
 

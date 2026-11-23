@@ -37,6 +37,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -59,6 +61,290 @@ type probeFunc func(fortiHTTP.FortiHTTP, *TargetMetadata) ([]prometheus.Metric, 
 type probeDetailedFunc struct {
 	name     string
 	function probeFunc
+	// unavailableCodes lists HTTP status codes that - for this probe only -
+	// mean "the feature is not configured on the target" in addition to
+	// defaultUnavailableCodes. FortiOS answers e.g. the BGP and OSPF monitor
+	// endpoints with HTTP 500 when the routing protocol is not configured.
+	unavailableCodes []int
+}
+
+// defaultUnavailableCodes are HTTP status codes that mean "this API endpoint
+// does not exist on this model/version or the feature is disabled". Probes
+// failing only with these codes are reported as unavailable instead of failed.
+var defaultUnavailableCodes = []int{http.StatusNotFound, http.StatusFailedDependency}
+
+// routingUnavailableCodes is used by the BGP and OSPF probes.
+var routingUnavailableCodes = []int{http.StatusInternalServerError}
+
+func availableProbes() []probeDetailedFunc {
+	return []probeDetailedFunc{
+		// Keep probeSystemTime first: probes are started in list order, so the
+		// time probe is processed first and its value is closest to the
+		// scrape timestamp Prometheus assigns.
+		{name: "System/Time/Clock", function: probeSystemTime},
+		{name: "BGP/NeighborPaths/IPv4", function: probeBGPNeighborPathsIPv4, unavailableCodes: routingUnavailableCodes},
+		{name: "BGP/NeighborPaths/IPv6", function: probeBGPNeighborPathsIPv6, unavailableCodes: routingUnavailableCodes},
+		{name: "BGP/Neighbors/IPv4", function: probeBGPNeighborsIPv4, unavailableCodes: routingUnavailableCodes},
+		{name: "BGP/Neighbors/IPv6", function: probeBGPNeighborsIPv6, unavailableCodes: routingUnavailableCodes},
+		{name: "Firewall/LoadBalance", function: probeFirewallLoadBalance},
+		{name: "Firewall/Policies", function: probeFirewallPolicies},
+		{name: "Firewall/IPPool", function: probeFirewallIPPool},
+		{name: "License/Status", function: probeLicenseStatus},
+		{name: "Log/Fortianalyzer/Status", function: probeLogAnalyzer},
+		{name: "Log/Fortianalyzer/Queue", function: probeLogAnalyzerQueue},
+		{name: "Log/DiskUsage", function: probeLogCurrentDiskUsage},
+		{name: "Network/Dns/Latency", function: probeNetworkDNSLatency},
+		{name: "System/AvailableCertificates", function: probeSystemAvailableCertificates},
+		{name: "System/Central-Management/Status", function: probeSystemCentralManagementStatus},
+		{name: "System/Fortimanager/Status", function: probeSystemFortimanagerStatus},
+		{name: "System/Global/Location", function: probeSystemGlobalLocation},
+		{name: "System/HAStatistics", function: probeSystemHAStatistics},
+		{name: "System/Ha-peer", function: probeSystemHaPeer},
+		{name: "System/Interface", function: probeSystemInterface},
+		{name: "System/Interface/Transceivers", function: probeSystemInterfaceTransceivers},
+		{name: "System/LinkMonitor", function: probeSystemLinkMonitor},
+		{name: "System/Performance/Status", function: probeSystemPerformanceStatus},
+		{name: "System/Ntp/Status", function: probeSystemNtpStatus},
+		{name: "System/Resource/Usage", function: probeSystemResourceUsage},
+		{name: "System/Resource/Usage/VDOM", function: probeSystemResourceUsagePerVdom},
+		{name: "System/SDNConnector", function: probeSystemSDNConnector},
+		{name: "System/SensorInfo", function: probeSystemSensorInfo},
+		{name: "System/Status", function: probeSystemStatus},
+		{name: "System/VDOMResource", function: probeSystemVdomResource},
+		{name: "System/HAChecksum", function: probeSystemHAChecksum},
+		{name: "User/Fsso", function: probeUserFsso},
+		{name: "VPN/IPSec", function: probeVPNIPSec},
+		{name: "VPN/Ssl/Connections", function: probeVPNSsl},
+		{name: "VPN/Ssl/Stats", function: probeVPNSslStats},
+		{name: "VirtualWAN/HealthCheck", function: probeVirtualWANHealthCheck},
+		{name: "WebUI/State", function: probeWebUIState},
+		{name: "Wifi/APStatus", function: probeWifiAPStatus},
+		{name: "Wifi/Clients", function: probeWifiClients},
+		{name: "Wifi/ManagedAP", function: probeWifiManagedAP},
+		{name: "Switch/ManagedSwitch", function: probeManagedSwitch},
+		{name: "OSPF/Neighbors", function: probeOSPFNeighbors, unavailableCodes: routingUnavailableCodes},
+	}
+}
+
+// selectProbes applies the include/exclude prefix lists of a target.
+func selectProbes(all []probeDetailedFunc, include, exclude config.ProbeList) []probeDetailedFunc {
+	selected := make([]probeDetailedFunc, 0, len(all))
+	for _, p := range all {
+		wanted := len(include) == 0
+		for _, prefix := range include {
+			if strings.HasPrefix(p.name, prefix) {
+				wanted = true
+				break
+			}
+		}
+		for _, prefix := range exclude {
+			if strings.HasPrefix(p.name, prefix) {
+				wanted = false
+				break
+			}
+		}
+		if wanted {
+			selected = append(selected, p)
+		}
+	}
+	return selected
+}
+
+type probeOutcome int
+
+const (
+	outcomeSuccess probeOutcome = iota
+	outcomeFailure
+	outcomeUnavailable
+)
+
+type probeResult struct {
+	metrics    []prometheus.Metric
+	outcome    probeOutcome
+	duration   time.Duration
+	statusCode int  // HTTP status that made the probe unavailable
+	cached     bool // probe was not executed, known to be unavailable
+}
+
+// recordingClient wraps the FortiGate client of a single probe run and
+// remembers which errors the probe ran into, so that a failed probe can be
+// classified as "unavailable" (feature/endpoint missing) or "failure".
+type recordingClient struct {
+	inner       fortiHTTP.FortiHTTP
+	unavailable map[int]bool
+
+	mu              sync.Mutex
+	unavailableCode int
+	otherError      bool
+}
+
+func newRecordingClient(inner fortiHTTP.FortiHTTP, extraCodes []int) *recordingClient {
+	codes := make(map[int]bool, len(defaultUnavailableCodes)+len(extraCodes))
+	for _, c := range defaultUnavailableCodes {
+		codes[c] = true
+	}
+	for _, c := range extraCodes {
+		codes[c] = true
+	}
+	return &recordingClient{inner: inner, unavailable: codes}
+}
+
+func (r *recordingClient) Get(path, query string, obj any) error {
+	err := r.inner.Get(path, query, obj)
+	if err == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if code, ok := fortiHTTP.StatusCode(err); ok && r.unavailable[code] {
+		r.unavailableCode = code
+	} else {
+		r.otherError = true
+	}
+	return err
+}
+
+func (r *recordingClient) classify(ok bool) (probeOutcome, int) {
+	if ok {
+		return outcomeSuccess, 0
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.unavailableCode != 0 && !r.otherError {
+		return outcomeUnavailable, r.unavailableCode
+	}
+	return outcomeFailure, 0
+}
+
+// callProbe runs a probe function and converts a panic into a failed probe.
+// This is required because probes run in their own goroutines, where an
+// unrecovered panic would terminate the whole exporter.
+func callProbe(p probeDetailedFunc, c fortiHTTP.FortiHTTP, meta *TargetMetadata) (m []prometheus.Metric, ok bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Error: probe %q panicked: %v", p.name, r)
+			m, ok = nil, false
+		}
+	}()
+	return p.function(c, meta)
+}
+
+func runProbe(p probeDetailedFunc, c fortiHTTP.FortiHTTP, meta *TargetMetadata) probeResult {
+	rc := newRecordingClient(c, p.unavailableCodes)
+	start := time.Now()
+	m, ok := callProbe(p, rc, meta)
+	outcome, code := rc.classify(ok)
+	res := probeResult{outcome: outcome, duration: time.Since(start), statusCode: code}
+	if outcome != outcomeUnavailable {
+		// On failure partial metrics are kept, as before.
+		res.metrics = m
+	}
+	return res
+}
+
+// unavailableCache remembers probes that are not available on a target so
+// they are not queried (and logged) on every scrape.
+type unavailableCache struct {
+	mu    sync.Mutex
+	until map[string]time.Time
+	now   func() time.Time
+}
+
+func newUnavailableCache() *unavailableCache {
+	return &unavailableCache{until: map[string]time.Time{}, now: time.Now}
+}
+
+func (u *unavailableCache) key(target, probe string) string {
+	return target + "\x00" + probe
+}
+
+func (u *unavailableCache) skip(target, probe string) bool {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	k := u.key(target, probe)
+	t, ok := u.until[k]
+	if !ok {
+		return false
+	}
+	if u.now().Before(t) {
+		return true
+	}
+	delete(u.until, k)
+	return false
+}
+
+func (u *unavailableCache) mark(target, probe string, d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.until[u.key(target, probe)] = u.now().Add(d)
+}
+
+var probeUnavailableCache = newUnavailableCache()
+
+var (
+	mProbeSuccess = prometheus.NewDesc(
+		"fortigate_exporter_probe_success",
+		"Whether the individual probe succeeded (1) or failed (0). Not reported for unavailable probes.",
+		[]string{"probe"}, nil,
+	)
+	mProbeUnavailable = prometheus.NewDesc(
+		"fortigate_exporter_probe_unavailable",
+		"Whether the probe's API endpoint is not available on the target (1), e.g. HTTP 404 or the feature is not configured.",
+		[]string{"probe"}, nil,
+	)
+	mProbeDuration = prometheus.NewDesc(
+		"fortigate_exporter_probe_duration_seconds",
+		"How long the individual probe took. Not reported for probes skipped as unavailable.",
+		[]string{"probe"}, nil,
+	)
+)
+
+// runProbes executes the given probes with at most `concurrency` probes in
+// flight and returns the results in the order of the input slice.
+func runProbes(probes []probeDetailedFunc, c fortiHTTP.FortiHTTP, meta *TargetMetadata, target string, concurrency int, recheck time.Duration, cache *unavailableCache) []probeResult {
+	results := make([]probeResult, len(probes))
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	if concurrency > len(probes) {
+		concurrency = len(probes)
+	}
+
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	for range concurrency {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range jobs {
+				p := probes[i]
+				if cache.skip(target, p.name) {
+					results[i] = probeResult{outcome: outcomeUnavailable, cached: true}
+					continue
+				}
+				res := runProbe(p, c, meta)
+				switch res.outcome {
+				case outcomeUnavailable:
+					cache.mark(target, p.name, recheck)
+					if recheck > 0 {
+						log.Printf("Probe %q is not available on %s (HTTP %d), skipping it for %s", p.name, target, res.statusCode, recheck)
+					}
+				case outcomeFailure:
+					log.Printf("Probe %q failed on %s after %.3f seconds", p.name, target, res.duration.Seconds())
+				}
+				results[i] = res
+			}
+		}()
+	}
+	for i := range probes {
+		jobs <- i
+	}
+	close(jobs)
+	wg.Wait()
+	return results
 }
 
 func (p *Collector) Probe(ctx context.Context, target map[string]string, hc *http.Client, savedConfig config.FortiExporterConfig) (bool, error) {
@@ -121,90 +407,33 @@ func (p *Collector) Probe(ctx context.Context, target map[string]string, hc *htt
 		VersionMinor: minor,
 	}
 
-	includedProbes := savedConfig.AuthKeys[config.Target(u.String())].Probes.Include
-	excludedProbes := savedConfig.AuthKeys[config.Target(u.String())].Probes.Exclude
+	auth := savedConfig.AuthKeys[config.Target(u.String())]
+	probes := selectProbes(availableProbes(), auth.Probes.Include, auth.Probes.Exclude)
+	results := runProbes(probes, c, meta, u.String(), savedConfig.MaxConcurrency, savedConfig.UnavailableRecheck, probeUnavailableCache)
 
-	// TODO: Make parallel
 	success := true
-	for _, aProbe := range []probeDetailedFunc{
-		// Always keep probeSystemTime on top of the list to have the probe processed first.
-		// Therefore time returned is more accurate when integrated in Prometheus because
-		// timestamp for the metrics probe, in Prometheus, is obtained from the query time, not the reply time.
-		// This is especially important when running all the probes takes many seconds.
-		{"System/Time/Clock", probeSystemTime},
-		{"BGP/NeighborPaths/IPv4", probeBGPNeighborPathsIPv4},
-		{"BGP/NeighborPaths/IPv6", probeBGPNeighborPathsIPv6},
-		{"BGP/Neighbors/IPv4", probeBGPNeighborsIPv4},
-		{"BGP/Neighbors/IPv6", probeBGPNeighborsIPv6},
-		{"Firewall/LoadBalance", probeFirewallLoadBalance},
-		{"Firewall/Policies", probeFirewallPolicies},
-		{"Firewall/IPPool", probeFirewallIPPool},
-		{"License/Status", probeLicenseStatus},
-		{"Log/Fortianalyzer/Status", probeLogAnalyzer},
-		{"Log/Fortianalyzer/Queue", probeLogAnalyzerQueue},
-		{"Log/DiskUsage", probeLogCurrentDiskUsage},
-		{"Network/Dns/Latency", probeNetworkDNSLatency},
-		{"System/AvailableCertificates", probeSystemAvailableCertificates},
-		{"System/Central-Management/Status", probeSystemCentralManagementStatus},
-		{"System/Fortimanager/Status", probeSystemFortimanagerStatus},
-		{"System/Global/Location", probeSystemGlobalLocation},
-		{"System/HAStatistics", probeSystemHAStatistics},
-		{"System/Ha-peer", probeSystemHaPeer},
-		{"System/Interface", probeSystemInterface},
-		{"System/Interface/Transceivers", probeSystemInterfaceTransceivers},
-		{"System/LinkMonitor", probeSystemLinkMonitor},
-		{"System/Performance/Status", probeSystemPerformanceStatus},
-		{"System/Ntp/Status", probeSystemNtpStatus},
-		{"System/Resource/Usage", probeSystemResourceUsage},
-		{"System/Resource/Usage/VDOM", probeSystemResourceUsagePerVdom},
-		{"System/SDNConnector", probeSystemSDNConnector},
-		{"System/SensorInfo", probeSystemSensorInfo},
-		{"System/Status", probeSystemStatus},
-		{"System/VDOMResource", probeSystemVdomResource},
-		{"System/HAChecksum", probeSystemHAChecksum},
-		{"User/Fsso", probeUserFsso},
-		{"VPN/IPSec", probeVPNIPSec},
-		{"VPN/Ssl/Connections", probeVPNSsl},
-		{"VPN/Ssl/Stats", probeVPNSslStats},
-		{"VirtualWAN/HealthCheck", probeVirtualWANHealthCheck},
-		{"WebUI/State", probeWebUIState},
-		{"Wifi/APStatus", probeWifiAPStatus},
-		{"Wifi/Clients", probeWifiClients},
-		{"Wifi/ManagedAP", probeWifiManagedAP},
-		{"Switch/ManagedSwitch", probeManagedSwitch},
-		{"OSPF/Neighbors", probeOSPFNeighbors},
-	} {
-		wanted := false
+	for i, res := range results {
+		name := probes[i].name
+		p.metrics = append(p.metrics, res.metrics...)
 
-		if len(includedProbes) == 0 {
-			wanted = true
-		} else {
-			for _, wantedProbe := range includedProbes {
-				if strings.HasPrefix(aProbe.name, wantedProbe) {
-					wanted = true
-					break
-				}
-			}
+		unavailable := 0.0
+		if res.outcome == outcomeUnavailable {
+			unavailable = 1
 		}
-
-		if len(excludedProbes) != 0 {
-			for _, unwantedProbe := range excludedProbes {
-				if strings.HasPrefix(aProbe.name, unwantedProbe) {
-					wanted = false
-					break
-				}
-			}
-		}
-
-		if !wanted {
+		p.metrics = append(p.metrics, prometheus.MustNewConstMetric(mProbeUnavailable, prometheus.GaugeValue, unavailable, name))
+		if res.outcome == outcomeUnavailable {
 			continue
 		}
 
-		m, ok := aProbe.function(c, meta)
-		if !ok {
+		ok := 1.0
+		if res.outcome == outcomeFailure {
+			ok = 0
 			success = false
 		}
-		p.metrics = append(p.metrics, m...)
+		p.metrics = append(p.metrics,
+			prometheus.MustNewConstMetric(mProbeSuccess, prometheus.GaugeValue, ok, name),
+			prometheus.MustNewConstMetric(mProbeDuration, prometheus.GaugeValue, res.duration.Seconds(), name),
+		)
 	}
 
 	return success, nil
