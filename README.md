@@ -348,6 +348,26 @@ docker build -t fortigate_exporter .
 docker run -d -p 9710:9710 -v /path/to/fortigate-key.yaml:/config/fortigate-key.yaml fortigate_exporter
 ```
 
+#### Images from forks (GitHub Container Registry)
+
+Forks of this repository publish their own images with the
+[`ghcr-release.yml`](.github/workflows/ghcr-release.yml) workflow:
+every push to `main` updates the `main` tag, every `v*` tag publishes a
+versioned image (`linux/amd64`, `linux/arm64`) plus a GitHub release with
+binaries. For example:
+
+```bash
+docker run -d -p 9710:9710 \
+  -v /path/to/fortigate-key.yaml:/config/fortigate-key.yaml \
+  ghcr.io/xozy22/fortigate_exporter:main -auth-file /config/fortigate-key.yaml
+```
+
+To build the same image locally without `promu`:
+
+```bash
+docker build -f Dockerfile.ghcr -t fortigate_exporter .
+```
+
 #### docker-compose
 
 ```yaml
