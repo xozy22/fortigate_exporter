@@ -32,124 +32,124 @@ func probeWifiManagedAP(c fortigatehttpclient.FortiHTTP, _ *TargetMetadata) ([]p
 		managedApJoinTime = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_join_time_seconds",
 			"Unix time when the managed access point has joined the mesh",
-			[]string{"vdom", "ap_name"}, nil,
+			[]string{"vdom", "ap_name", "serial"}, nil,
 		)
 		managedAPCPUUsage = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_cpu_usage_ratio",
 			"CPU usage of the access point",
-			[]string{"vdom", "ap_name"}, nil,
+			[]string{"vdom", "ap_name", "serial"}, nil,
 		)
 		managedAPMemFree = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_memory_free_bytes",
 			"Free memory of the managed access point",
-			[]string{"vdom", "ap_name"}, nil,
+			[]string{"vdom", "ap_name", "serial"}, nil,
 		)
 		managedAPMemTotal = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_memory_bytes_total",
 			"Total memory of the managed access point",
-			[]string{"vdom", "ap_name"}, nil,
+			[]string{"vdom", "ap_name", "serial"}, nil,
 		)
 
 		radioClientInfo = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_radio_info",
 			"Informations about radios on managed access points",
-			[]string{"vdom", "ap_name", "radio_id", "operating_channel"}, nil,
+			[]string{"vdom", "ap_name", "radio_id", "operating_channel", "serial"}, nil,
 		)
 		radioClientCount = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_radio_client_count",
 			"Number of clients that are connected using this radio",
-			[]string{"vdom", "ap_name", "radio_id"}, nil,
+			[]string{"vdom", "ap_name", "radio_id", "serial"}, nil,
 		)
 		radioClientOperTxPower = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_radio_operating_tx_power_ratio",
 			"Power usage on the operating channel in percent",
-			[]string{"vdom", "ap_name", "radio_id"}, nil,
+			[]string{"vdom", "ap_name", "radio_id", "serial"}, nil,
 		)
 		radioClientChannelUtilization = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_radio_operating_channel_utilization_ratio",
 			"Utilization on the operating channel of the radio",
-			[]string{"vdom", "ap_name", "radio_id"}, nil,
+			[]string{"vdom", "ap_name", "radio_id", "serial"}, nil,
 		)
 		radioClientRadioBandwidthRx = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_radio_bandwidth_rx_bps",
 			"Bandwidth of this radio for receiving",
-			[]string{"vdom", "ap_name", "radio_id"}, nil,
+			[]string{"vdom", "ap_name", "radio_id", "serial"}, nil,
 		)
 		radioClientRadioBandwidthTx = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_radio_bandwidth_tx_bps",
 			"Bandwidth of this radio for transmitting",
-			[]string{"vdom", "ap_name", "radio_id"}, nil,
+			[]string{"vdom", "ap_name", "radio_id", "serial"}, nil,
 		)
 		radioClientRadioRxBytes = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_radio_rx_bytes_total",
 			"Total number of received bytes",
-			[]string{"vdom", "ap_name", "radio_id"}, nil,
+			[]string{"vdom", "ap_name", "radio_id", "serial"}, nil,
 		)
 		radioClientRadioTxBytes = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_radio_tx_bytes_total",
 			"Total number of transferred bytes",
-			[]string{"vdom", "ap_name", "radio_id"}, nil,
+			[]string{"vdom", "ap_name", "radio_id", "serial"}, nil,
 		)
 		radioInterferingAps = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_radio_interfering_aps",
 			"Number of interfering access points",
-			[]string{"vdom", "ap_name", "radio_id"}, nil,
+			[]string{"vdom", "ap_name", "radio_id", "serial"}, nil,
 		)
 		radioTxPower = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_radio_tx_power_ratio",
 			"Set Wifi power for the radio in percent",
-			[]string{"vdom", "ap_name", "radio_id"}, nil,
+			[]string{"vdom", "ap_name", "radio_id", "serial"}, nil,
 		)
 		radioTxDiscardPercentage = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_radio_tx_discard_ratio",
 			"Percentage of discarded packets",
-			[]string{"vdom", "ap_name", "radio_id"}, nil,
+			[]string{"vdom", "ap_name", "radio_id", "serial"}, nil,
 		)
 		radioTxRetryPercentage = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_radio_tx_retries_ratio",
 			"Percentage of retried connection to all connection attempts",
-			[]string{"vdom", "ap_name", "radio_id"}, nil,
+			[]string{"vdom", "ap_name", "radio_id", "serial"}, nil,
 		)
 
 		interfaceBytesRx = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_interface_rx_bytes_total",
 			"total number of bytes received on this interface",
-			[]string{"vdom", "ap_name", "interface"}, nil,
+			[]string{"vdom", "ap_name", "interface", "serial"}, nil,
 		)
 		interfaceBytesTx = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_interface_tx_bytes_total",
 			"total number of bytes transferred on this interface",
-			[]string{"vdom", "ap_name", "interface"}, nil,
+			[]string{"vdom", "ap_name", "interface", "serial"}, nil,
 		)
 		interfacePackagesRx = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_interface_rx_packets_total",
 			"total number of packets received on this interface",
-			[]string{"vdom", "ap_name", "interface"}, nil,
+			[]string{"vdom", "ap_name", "interface", "serial"}, nil,
 		)
 		interfacePackagesTx = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_interface_tx_packets_total",
 			"total number of packets transferred on this interface",
-			[]string{"vdom", "ap_name", "interface"}, nil,
+			[]string{"vdom", "ap_name", "interface", "serial"}, nil,
 		)
 		interfaceErrorsRx = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_interface_rx_errors_total",
 			"total number of errors received on this interface",
-			[]string{"vdom", "ap_name", "interface"}, nil,
+			[]string{"vdom", "ap_name", "interface", "serial"}, nil,
 		)
 		interfaceErrorsTx = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_interface_tx_errors_total",
 			"total number of errors transferred on this interface",
-			[]string{"vdom", "ap_name", "interface"}, nil,
+			[]string{"vdom", "ap_name", "interface", "serial"}, nil,
 		)
 		interfaceDroppedRx = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_interface_rx_dropped_packets_total",
 			"total number of dropped packets received on this interface",
-			[]string{"vdom", "ap_name", "interface"}, nil,
+			[]string{"vdom", "ap_name", "interface", "serial"}, nil,
 		)
 		interfaceDroppedTx = prometheus.NewDesc(
 			"fortigate_wifi_managed_ap_interface_tx_dropped_packets_total",
 			"total number of dropped packets transferred on this interface",
-			[]string{"vdom", "ap_name", "interface"}, nil,
+			[]string{"vdom", "ap_name", "interface", "serial"}, nil,
 		)
 	)
 
@@ -218,36 +218,36 @@ func probeWifiManagedAP(c fortigatehttpclient.FortiHTTP, _ *TargetMetadata) ([]p
 	for _, rs := range response {
 		for _, result := range rs.Results {
 			m = append(m, prometheus.MustNewConstMetric(managedAPInfo, prometheus.CounterValue, 1, result.VDOM, result.Name, result.APProfile, result.OSVersion, result.Serial))
-			m = append(m, prometheus.MustNewConstMetric(managedApJoinTime, prometheus.CounterValue, result.JoinTimeRaw, result.VDOM, result.Name))
-			m = append(m, prometheus.MustNewConstMetric(managedAPCPUUsage, prometheus.GaugeValue, result.CPUUsage/100, result.VDOM, result.Name))
-			m = append(m, prometheus.MustNewConstMetric(managedAPMemFree, prometheus.GaugeValue, result.MemFree, result.VDOM, result.Name))
-			m = append(m, prometheus.MustNewConstMetric(managedAPMemTotal, prometheus.GaugeValue, result.MemTotal, result.VDOM, result.Name))
+			m = append(m, prometheus.MustNewConstMetric(managedApJoinTime, prometheus.CounterValue, result.JoinTimeRaw, result.VDOM, result.Name, result.Serial))
+			m = append(m, prometheus.MustNewConstMetric(managedAPCPUUsage, prometheus.GaugeValue, result.CPUUsage/100, result.VDOM, result.Name, result.Serial))
+			m = append(m, prometheus.MustNewConstMetric(managedAPMemFree, prometheus.GaugeValue, result.MemFree, result.VDOM, result.Name, result.Serial))
+			m = append(m, prometheus.MustNewConstMetric(managedAPMemTotal, prometheus.GaugeValue, result.MemTotal, result.VDOM, result.Name, result.Serial))
 
 			for _, radio := range result.Radio {
 				radioID := strconv.Itoa(radio.RadioID)
-				m = append(m, prometheus.MustNewConstMetric(radioClientInfo, prometheus.CounterValue, 1, result.VDOM, result.Name, radioID, strconv.Itoa(radio.OperChan)))
-				m = append(m, prometheus.MustNewConstMetric(radioClientCount, prometheus.GaugeValue, radio.ClientCount, result.VDOM, result.Name, radioID))
-				m = append(m, prometheus.MustNewConstMetric(radioClientOperTxPower, prometheus.GaugeValue, radio.OperTxpower/100, result.VDOM, result.Name, radioID))
-				m = append(m, prometheus.MustNewConstMetric(radioClientChannelUtilization, prometheus.GaugeValue, radio.ChannelUtilizationPercent/100, result.VDOM, result.Name, radioID))
-				m = append(m, prometheus.MustNewConstMetric(radioClientRadioBandwidthRx, prometheus.GaugeValue, radio.BandwidthRx, result.VDOM, result.Name, radioID))
-				m = append(m, prometheus.MustNewConstMetric(radioClientRadioBandwidthTx, prometheus.GaugeValue, radio.BandwidthTx, result.VDOM, result.Name, radioID))
-				m = append(m, prometheus.MustNewConstMetric(radioClientRadioRxBytes, prometheus.GaugeValue, radio.BytesRx, result.VDOM, result.Name, radioID))
-				m = append(m, prometheus.MustNewConstMetric(radioClientRadioTxBytes, prometheus.GaugeValue, radio.BytesTx, result.VDOM, result.Name, radioID))
-				m = append(m, prometheus.MustNewConstMetric(radioInterferingAps, prometheus.GaugeValue, radio.InterferingAps, result.VDOM, result.Name, radioID))
-				m = append(m, prometheus.MustNewConstMetric(radioTxPower, prometheus.GaugeValue, radio.Txpower/100, result.VDOM, result.Name, radioID))
-				m = append(m, prometheus.MustNewConstMetric(radioTxRetryPercentage, prometheus.GaugeValue, radio.TxRetriesPercent/100, result.VDOM, result.Name, radioID))
-				m = append(m, prometheus.MustNewConstMetric(radioTxDiscardPercentage, prometheus.GaugeValue, radio.TxDiscardPercentage/100, result.VDOM, result.Name, radioID))
+				m = append(m, prometheus.MustNewConstMetric(radioClientInfo, prometheus.CounterValue, 1, result.VDOM, result.Name, radioID, strconv.Itoa(radio.OperChan), result.Serial))
+				m = append(m, prometheus.MustNewConstMetric(radioClientCount, prometheus.GaugeValue, radio.ClientCount, result.VDOM, result.Name, radioID, result.Serial))
+				m = append(m, prometheus.MustNewConstMetric(radioClientOperTxPower, prometheus.GaugeValue, radio.OperTxpower/100, result.VDOM, result.Name, radioID, result.Serial))
+				m = append(m, prometheus.MustNewConstMetric(radioClientChannelUtilization, prometheus.GaugeValue, radio.ChannelUtilizationPercent/100, result.VDOM, result.Name, radioID, result.Serial))
+				m = append(m, prometheus.MustNewConstMetric(radioClientRadioBandwidthRx, prometheus.GaugeValue, radio.BandwidthRx, result.VDOM, result.Name, radioID, result.Serial))
+				m = append(m, prometheus.MustNewConstMetric(radioClientRadioBandwidthTx, prometheus.GaugeValue, radio.BandwidthTx, result.VDOM, result.Name, radioID, result.Serial))
+				m = append(m, prometheus.MustNewConstMetric(radioClientRadioRxBytes, prometheus.GaugeValue, radio.BytesRx, result.VDOM, result.Name, radioID, result.Serial))
+				m = append(m, prometheus.MustNewConstMetric(radioClientRadioTxBytes, prometheus.GaugeValue, radio.BytesTx, result.VDOM, result.Name, radioID, result.Serial))
+				m = append(m, prometheus.MustNewConstMetric(radioInterferingAps, prometheus.GaugeValue, radio.InterferingAps, result.VDOM, result.Name, radioID, result.Serial))
+				m = append(m, prometheus.MustNewConstMetric(radioTxPower, prometheus.GaugeValue, radio.Txpower/100, result.VDOM, result.Name, radioID, result.Serial))
+				m = append(m, prometheus.MustNewConstMetric(radioTxRetryPercentage, prometheus.GaugeValue, radio.TxRetriesPercent/100, result.VDOM, result.Name, radioID, result.Serial))
+				m = append(m, prometheus.MustNewConstMetric(radioTxDiscardPercentage, prometheus.GaugeValue, radio.TxDiscardPercentage/100, result.VDOM, result.Name, radioID, result.Serial))
 			}
 
 			for _, wired := range result.Wired {
-				m = append(m, prometheus.MustNewConstMetric(interfaceBytesRx, prometheus.GaugeValue, wired.BytesRx, result.VDOM, result.Name, wired.Interface))
-				m = append(m, prometheus.MustNewConstMetric(interfaceBytesTx, prometheus.GaugeValue, wired.BytesTx, result.VDOM, result.Name, wired.Interface))
-				m = append(m, prometheus.MustNewConstMetric(interfacePackagesRx, prometheus.GaugeValue, wired.PacketsRx, result.VDOM, result.Name, wired.Interface))
-				m = append(m, prometheus.MustNewConstMetric(interfacePackagesTx, prometheus.GaugeValue, wired.PacketsTx, result.VDOM, result.Name, wired.Interface))
-				m = append(m, prometheus.MustNewConstMetric(interfaceErrorsRx, prometheus.GaugeValue, wired.ErrorsRx, result.VDOM, result.Name, wired.Interface))
-				m = append(m, prometheus.MustNewConstMetric(interfaceErrorsTx, prometheus.GaugeValue, wired.ErrorsTx, result.VDOM, result.Name, wired.Interface))
-				m = append(m, prometheus.MustNewConstMetric(interfaceDroppedRx, prometheus.GaugeValue, wired.DroppedRx, result.VDOM, result.Name, wired.Interface))
-				m = append(m, prometheus.MustNewConstMetric(interfaceDroppedTx, prometheus.GaugeValue, wired.DroppedTx, result.VDOM, result.Name, wired.Interface))
+				m = append(m, prometheus.MustNewConstMetric(interfaceBytesRx, prometheus.GaugeValue, wired.BytesRx, result.VDOM, result.Name, wired.Interface, result.Serial))
+				m = append(m, prometheus.MustNewConstMetric(interfaceBytesTx, prometheus.GaugeValue, wired.BytesTx, result.VDOM, result.Name, wired.Interface, result.Serial))
+				m = append(m, prometheus.MustNewConstMetric(interfacePackagesRx, prometheus.GaugeValue, wired.PacketsRx, result.VDOM, result.Name, wired.Interface, result.Serial))
+				m = append(m, prometheus.MustNewConstMetric(interfacePackagesTx, prometheus.GaugeValue, wired.PacketsTx, result.VDOM, result.Name, wired.Interface, result.Serial))
+				m = append(m, prometheus.MustNewConstMetric(interfaceErrorsRx, prometheus.GaugeValue, wired.ErrorsRx, result.VDOM, result.Name, wired.Interface, result.Serial))
+				m = append(m, prometheus.MustNewConstMetric(interfaceErrorsTx, prometheus.GaugeValue, wired.ErrorsTx, result.VDOM, result.Name, wired.Interface, result.Serial))
+				m = append(m, prometheus.MustNewConstMetric(interfaceDroppedRx, prometheus.GaugeValue, wired.DroppedRx, result.VDOM, result.Name, wired.Interface, result.Serial))
+				m = append(m, prometheus.MustNewConstMetric(interfaceDroppedTx, prometheus.GaugeValue, wired.DroppedTx, result.VDOM, result.Name, wired.Interface, result.Serial))
 			}
 		}
 	}

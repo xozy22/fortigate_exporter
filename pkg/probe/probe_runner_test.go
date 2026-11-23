@@ -328,3 +328,34 @@ func labelValue(m *dto.Metric, name string) string {
 	}
 	return ""
 }
+
+func TestRunProbeDropsDuplicateSeries(t *testing.T) {
+	desc := prometheus.NewDesc("fortigate_test_dup", "test", []string{"name"}, nil)
+	p := probeDetailedFunc{name: "Dups", function: func(fortiHTTP.FortiHTTP, *TargetMetadata) ([]prometheus.Metric, bool) {
+		return []prometheus.Metric{
+			prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, 1, "a"),
+			prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, 2, "b"),
+			prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, 3, "a"), // duplicate
+		}, true
+	}}
+	res := runProbe(p, errClient{}, &TargetMetadata{})
+	if res.outcome != outcomeSuccess {
+		t.Fatalf("outcome = %v, want success", res.outcome)
+	}
+	if len(res.metrics) != 2 {
+		t.Fatalf("expected 2 metrics after dedupe, got %d", len(res.metrics))
+	}
+	reg := prometheus.NewPedanticRegistry()
+	reg.MustRegister(&testCollector{metrics: res.metrics})
+	if _, err := reg.Gather(); err != nil {
+		t.Fatalf("gather after dedupe must not fail: %v", err)
+	}
+
+	_, dups, example := dedupeMetrics([]prometheus.Metric{
+		prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, 1, "x"),
+		prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, 1, "x"),
+	})
+	if dups != 1 || example != `fortigate_test_dup{name="x"}` {
+		t.Errorf("dedupeMetrics: dups=%d example=%q", dups, example)
+	}
+}

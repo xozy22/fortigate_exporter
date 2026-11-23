@@ -41,6 +41,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 
 	"github.com/prometheus-community/fortigate_exporter/internal/config"
 	"github.com/prometheus-community/fortigate_exporter/internal/fortiversion"
@@ -237,9 +238,67 @@ func runProbe(p probeDetailedFunc, c fortiHTTP.FortiHTTP, meta *TargetMetadata) 
 	res := probeResult{outcome: outcome, duration: time.Since(start), statusCode: code}
 	if outcome != outcomeUnavailable {
 		// On failure partial metrics are kept, as before.
-		res.metrics = m
+		var dups int
+		var example string
+		res.metrics, dups, example = dedupeMetrics(m)
+		if dups > 0 {
+			log.Printf("Warning: probe %q produced %d duplicate series, dropped them (first: %s)", p.name, dups, example)
+		}
 	}
 	return res
+}
+
+// dedupeMetrics drops metrics whose name and label values were already seen.
+// FortiOS sometimes returns entries that map to identical label sets (e.g.
+// two managed APs with the same name). Without this, the Prometheus registry
+// reports one error per duplicate on every scrape.
+func dedupeMetrics(ms []prometheus.Metric) ([]prometheus.Metric, int, string) {
+	if len(ms) < 2 {
+		return ms, 0, ""
+	}
+	seen := make(map[string]struct{}, len(ms))
+	out := make([]prometheus.Metric, 0, len(ms))
+	dups := 0
+	example := ""
+	for _, m := range ms {
+		var pb dto.Metric
+		if err := m.Write(&pb); err != nil {
+			out = append(out, m)
+			continue
+		}
+		var key strings.Builder
+		key.WriteString(m.Desc().String())
+		for _, l := range pb.GetLabel() {
+			key.WriteString("\xff")
+			key.WriteString(l.GetName())
+			key.WriteString("=")
+			key.WriteString(l.GetValue())
+		}
+		k := key.String()
+		if _, ok := seen[k]; ok {
+			dups++
+			if example == "" {
+				example = metricString(m.Desc(), pb.GetLabel())
+			}
+			continue
+		}
+		seen[k] = struct{}{}
+		out = append(out, m)
+	}
+	return out, dups, example
+}
+
+// metricString renders a metric as name{label="value",...} for log messages.
+func metricString(d *prometheus.Desc, labels []*dto.LabelPair) string {
+	name := d.String()
+	if _, rest, ok := strings.Cut(name, `fqName: "`); ok {
+		name, _, _ = strings.Cut(rest, `"`)
+	}
+	parts := make([]string, 0, len(labels))
+	for _, l := range labels {
+		parts = append(parts, fmt.Sprintf("%s=%q", l.GetName(), l.GetValue()))
+	}
+	return name + "{" + strings.Join(parts, ",") + "}"
 }
 
 // unavailableCache remembers probes that are not available on a target so

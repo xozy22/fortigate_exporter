@@ -38,3 +38,23 @@ func TestNetworkDnsLatency(t *testing.T) {
 		t.Fatalf("metric compare: err %v", err)
 	}
 }
+
+func TestNetworkDNSLatencyIPv6(t *testing.T) {
+	c := newFakeClient()
+	c.prepare("api/v2/monitor/network/dns/latency", "testdata/network-dns-latency-ipv6.jsonnet")
+	r := prometheus.NewPedanticRegistry()
+	if !testProbe(probeNetworkDNSLatency, c, r) {
+		t.Fatal("probeNetworkDNSLatency() returned non-success")
+	}
+
+	em := `
+	# HELP fortigate_network_dns_latency_seconds Network dns latency
+	# TYPE fortigate_network_dns_latency_seconds gauge
+	fortigate_network_dns_latency_seconds{ip="2001:1620:2777:1::10",service="dns_server"} 0.014
+	fortigate_network_dns_latency_seconds{ip="2001:1620:2777:2::20",service="dns_server"} 0.012
+	fortigate_network_dns_latency_seconds{ip="9.9.9.9",service="dns_server"} 0.01
+	`
+	if err := testutil.GatherAndCompare(r, strings.NewReader(em)); err != nil {
+		t.Fatalf("metric compare: err %v", err)
+	}
+}
