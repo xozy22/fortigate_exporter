@@ -20,6 +20,9 @@ FROM gcr.io/distroless/static-debian13:nonroot
 LABEL org.opencontainers.image.title="fortigate_exporter"
 LABEL org.opencontainers.image.description="Prometheus exporter for FortiGate firewalls"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
+LABEL org.opencontainers.image.documentation="https://github.com/xozy22/fortigate_exporter#readme"
 COPY --from=build /out/fortigate_exporter /bin/fortigate_exporter
 EXPOSE 9710
 ENTRYPOINT ["/bin/fortigate_exporter"]
+# Default arguments; anything passed after the image name replaces them.
+CMD ["-auth-file", "/config/fortigate-key.yaml"]
