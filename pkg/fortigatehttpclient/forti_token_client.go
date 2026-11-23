@@ -78,7 +78,9 @@ func (c *fortiTokenClient) Get(path, query string, obj any) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("response code was %d, expected 200 (path: %q)", resp.StatusCode, path)
+		// Drain the body so the connection can be reused by the transport.
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return &HTTPStatusError{StatusCode: resp.StatusCode, Path: path}
 	}
 
 	b, err := io.ReadAll(resp.Body)

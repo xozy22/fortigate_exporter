@@ -18,6 +18,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"go.yaml.in/yaml/v2"
 )
@@ -31,6 +32,9 @@ type FortiExporterParameter struct {
 	TLSExtraCAs   *string
 	MaxBGPPaths   *int
 	MaxVPNUsers   *int
+
+	MaxConcurrency     *int
+	UnavailableRecheck *time.Duration
 }
 
 type FortiExporterConfig struct {
@@ -42,6 +46,14 @@ type FortiExporterConfig struct {
 	TLSExtraCAs   []LocalCert
 	MaxBGPPaths   int
 	MaxVPNUsers   int
+
+	// MaxConcurrency is the number of probes executed in parallel against a
+	// single target. Values below 1 mean sequential execution.
+	MaxConcurrency int
+	// UnavailableRecheck is how long a probe whose API endpoint is not
+	// available on a target (e.g. HTTP 404, or BGP/OSPF not configured) is
+	// skipped before it is tried again. 0 means: try again on every scrape.
+	UnavailableRecheck time.Duration
 }
 
 type AuthKeys map[Target]TargetAuth
@@ -77,6 +89,9 @@ var (
 		TLSExtraCAs:   flag.String("extra-ca-certs", "", "comma-separated files containing extra PEMs to trust for TLS connections in addition to the system trust store"),
 		MaxBGPPaths:   flag.Int("max-bgp-paths", 10000, "How many BGP Paths to receive when counting routes, needs to be greater than or equal to the number of routes or metrics will not be generated"),
 		MaxVPNUsers:   flag.Int("max-vpn-users", 0, "How many VPN Users to receive when counting users, needs to be greater than or equal the number of users or metrics will not be generated (0 eq. none by default)"),
+
+		MaxConcurrency:     flag.Int("max-concurrency", 4, "How many probes to run in parallel against a single target (1 = sequential)"),
+		UnavailableRecheck: flag.Duration("unavailable-recheck-interval", time.Hour, "How long to skip probes whose API endpoint is not available on a target (e.g. HTTP 404, BGP/OSPF not configured) before trying again (0 = try on every scrape)"),
 	}
 
 	savedConfig *FortiExporterConfig
@@ -106,6 +121,9 @@ func ReInit() error {
 		TLSInsecure:   *parameter.TLSInsecure,
 		MaxBGPPaths:   *parameter.MaxBGPPaths,
 		MaxVPNUsers:   *parameter.MaxVPNUsers,
+
+		MaxConcurrency:     *parameter.MaxConcurrency,
+		UnavailableRecheck: *parameter.UnavailableRecheck,
 	}
 
 	// parse AuthKeys

@@ -1,3 +1,14 @@
+## Unreleased
+
+- [FEATURE] Run probes in parallel, configurable with `-max-concurrency` (default 4). A scrape now takes about as long as the slowest probe.
+- [FEATURE] Per-probe metrics `fortigate_exporter_probe_success`, `fortigate_exporter_probe_unavailable` and `fortigate_exporter_probe_duration_seconds`.
+- [CHANGE] Probes whose endpoint is not available on the target (HTTP 404/424, or HTTP 500 for BGP/OSPF when the protocol is not configured) are reported as unavailable instead of failed and no longer set `probe_success` to 0. They are skipped for `-unavailable-recheck-interval` (default 1h).
+- [BUGFIX] A panicking probe no longer aborts the whole scrape.
+- [BUGFIX] Serve all consistent metrics instead of HTTP 500 when a single probe yields an inconsistent metric (e.g. duplicate label sets, #393).
+- [BUGFIX] Drop duplicate series inside a probe and log them once per scrape instead of one registry error per series.
+- [BUGFIX] `Network/Dns/Latency`: use the `ip6` address as `ip` label for IPv6 DNS servers; FortiOS reports the same `ip` for them, which caused duplicate series (#393).
+- [CHANGE] `Wifi/ManagedAP`: all `fortigate_wifi_managed_ap_*` metrics now carry the `serial` label. Two managed APs with the same name (e.g. a replaced AP still listed offline) produced duplicate series before.
+
 ## v1.25.0 / 2026-03-15
 
 First release after the move to the prometheus-community

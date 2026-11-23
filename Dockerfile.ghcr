@@ -1,0 +1,25 @@
+# Self-contained multi-stage build used by .github/workflows/ghcr-release.yml.
+# Unlike Dockerfile/Dockerfile.distroless it does not need a promu build first.
+FROM --platform=$BUILDPLATFORM golang:1.26 AS build
+
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION=devel
+ARG REVISION=unknown
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -trimpath \
+      -ldflags "-s -w -X main.Version=${VERSION} -X main.GitHash=${REVISION}" \
+      -o /out/fortigate_exporter .
+
+FROM gcr.io/distroless/static-debian13:nonroot
+LABEL org.opencontainers.image.title="fortigate_exporter"
+LABEL org.opencontainers.image.description="Prometheus exporter for FortiGate firewalls"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+COPY --from=build /out/fortigate_exporter /bin/fortigate_exporter
+EXPOSE 9710
+ENTRYPOINT ["/bin/fortigate_exporter"]

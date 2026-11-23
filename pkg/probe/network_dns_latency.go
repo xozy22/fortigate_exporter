@@ -33,6 +33,10 @@ func probeNetworkDNSLatency(c fortigatehttpclient.FortiHTTP, _ *TargetMetadata) 
 		Latency    float64 `json:"latency"`
 		LastUpdate float64 `json:"last_update"`
 		IP         string  `json:"ip"`
+		// IP6 is only set for IPv6 DNS servers. For those FortiOS fills
+		// "ip" with a meaningless IPv4 rendering of the first 32 bits of
+		// the IPv6 address, which collides for servers in the same /32.
+		IP6 string `json:"ip6,omitempty"`
 	}
 
 	type DNSLatencyResult struct {
@@ -46,7 +50,11 @@ func probeNetworkDNSLatency(c fortigatehttpclient.FortiHTTP, _ *TargetMetadata) 
 	}
 	m := []prometheus.Metric{}
 	for _, r := range res.Results {
-		m = append(m, prometheus.MustNewConstMetric(dnsLatency, prometheus.GaugeValue, r.Latency*0.001, r.Service, r.IP))
+		ip := r.IP
+		if r.IP6 != "" {
+			ip = r.IP6
+		}
+		m = append(m, prometheus.MustNewConstMetric(dnsLatency, prometheus.GaugeValue, r.Latency*0.001, r.Service, ip))
 	}
 
 	return m, true

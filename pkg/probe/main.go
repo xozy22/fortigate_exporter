@@ -75,6 +75,12 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		// probeSuccessGauge default is 0
 		log.Printf("Probe of %q failed, took %.3f seconds", target, duration)
 	}
-	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
+	// ContinueOnError: if a single probe produces an inconsistent metric (for
+	// example a duplicate label set), serve everything else instead of
+	// failing the whole scrape with HTTP 500.
+	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{
+		ErrorHandling: promhttp.ContinueOnError,
+		ErrorLog:      log.Default(),
+	})
 	h.ServeHTTP(w, r)
 }

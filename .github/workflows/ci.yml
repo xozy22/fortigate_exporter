@@ -42,10 +42,12 @@ jobs:
     permissions:
       packages: write
     needs: [test_go, build]
+    # Don't run on forks, they lack the registry credentials (see ghcr-release.yml).
     if: |
+      github.repository_owner == 'prometheus-community' && (
       (github.event_name == 'push' && github.event.ref == 'refs/heads/main')
       ||
-      (github.event_name == 'push' && github.event.ref == 'refs/heads/master')
+      (github.event_name == 'push' && github.event.ref == 'refs/heads/master'))
     steps:
       - uses: prometheus/promci/publish_main@872d318d090d73df349cb6ed90aadd072ca478f7 # v0.10.0
         with:
@@ -63,6 +65,7 @@ jobs:
       packages: write
     needs: [test_go, build]
     if: |
+      github.repository_owner == 'prometheus-community' &&
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
     steps:
       - uses: prometheus/promci/publish_release@872d318d090d73df349cb6ed90aadd072ca478f7 # v0.10.0
