@@ -1,10 +1,11 @@
-version: '3'
-
 services:
-  prometheus_fortigate_exporter:
-    build: ./
+  fortigate_exporter:
+    image: ghcr.io/xozy22/fortigate_exporter:main
+    container_name: fortigate_exporter
     ports:
-      - 9710:9710
+      - "9710:9710"
     volumes:
-      - /path/to/fortigate-key.yaml:/config/fortigate-key.yaml
+      - ./fortigate-key.yaml:/config/fortigate-key.yaml:ro
+    # Optional: override the default arguments (keep -auth-file when doing so)
+    # command: ["-auth-file", "/config/fortigate-key.yaml", "-insecure"]
     restart: unless-stopped

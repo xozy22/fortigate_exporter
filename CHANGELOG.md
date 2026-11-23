@@ -7,6 +7,8 @@
 - [BUGFIX] Serve all consistent metrics instead of HTTP 500 when a single probe yields an inconsistent metric (e.g. duplicate label sets, #393).
 - [BUGFIX] Drop duplicate series inside a probe and log them once per scrape instead of one registry error per series.
 - [BUGFIX] `Network/Dns/Latency`: use the `ip6` address as `ip` label for IPv6 DNS servers; FortiOS reports the same `ip` for them, which caused duplicate series (#393).
+- [CHANGE] Container image (`Dockerfile.ghcr`) reads `/config/fortigate-key.yaml` by default; `docker-compose.yml` uses `ghcr.io/xozy22/fortigate_exporter`.
+- [DOCS] README rewritten: quick start with the GHCR image, complete probe/permission table, Prometheus timeout advice.
 - [CHANGE] `Wifi/ManagedAP`: all `fortigate_wifi_managed_ap_*` metrics now carry the `serial` label. Two managed APs with the same name (e.g. a replaced AP still listed offline) produced duplicate series before.
 
 ## v1.25.0 / 2026-03-15

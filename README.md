@@ -1,77 +1,153 @@
 # fortigate_exporter
 
-![Go](https://github.com/prometheus-community/fortigate_exporter/workflows/Go/badge.svg)
-![Docker](https://github.com/prometheus-community/fortigate_exporter/workflows/Docker/badge.svg)
-[![Docker Repository on Quay](https://quay.io/repository/prometheuscommunity/fortigate-exporter/status "Docker Repository on Quay")](https://quay.io/repository/prometheuscommunity/fortigate-exporter)
-[![Matrix](https://img.shields.io/matrix/fortigate_exporter:matrix.org)](https://matrix.to/#/#fortigate_exporter:matrix.org)
+[![CI](https://github.com/xozy22/fortigate_exporter/actions/workflows/ci.yml/badge.svg)](https://github.com/xozy22/fortigate_exporter/actions/workflows/ci.yml)
+[![GHCR release](https://github.com/xozy22/fortigate_exporter/actions/workflows/ghcr-release.yml/badge.svg)](https://github.com/xozy22/fortigate_exporter/actions/workflows/ghcr-release.yml)
+[![Container image](https://img.shields.io/badge/ghcr.io-xozy22%2Ffortigate__exporter-blue?logo=docker)](https://github.com/xozy22/fortigate_exporter/pkgs/container/fortigate_exporter)
 
-Prometheus exporter for FortiGate® firewalls.
+Prometheus exporter for FortiGate® firewalls, using the FortiOS REST API.
 
----
+This repository is a fork of
+[prometheus-community/fortigate_exporter](https://github.com/prometheus-community/fortigate_exporter)
+with a ready-to-use container image, faster and more robust scrapes and
+Grafana dashboards. It is tested with FortiOS 7.6.8.
 
-**NOTE:** This is not an official Fortinet product, it is developed fully independently by professionals and hobbyists alike.
+> **Note:** This is not an official Fortinet product. It is developed fully
+> independently by professionals and hobbyists alike.
 
-  * [Supported Metrics](#supported-metrics)
-  * [Usage](#usage)
-    + [Dynamic configuration](#dynamic-configuration)
-    + [Available CLI parameters](#available-cli-parameters)
-    + [Probe health](#probe-health)
-    + [Fortigate Configuration](#fortigate-configuration)
-    + [Prometheus Configuration](#prometheus-configuration)
-    + [Docker](#docker)
-      - [docker-compose](#docker-compose)
-  * [Grafana Dashboards](#grafana-dashboards)
-  * [Known Issues](#known-issues)
-  * [Missing Metrics?](#missing-metrics)
+## Contents
 
-## Supported Metrics
+- [What is different in this fork](#what-is-different-in-this-fork)
+- [Quick start with Docker](#quick-start-with-docker)
+- [Configuration](#configuration)
+  - [Key file](#key-file)
+  - [Selecting probes](#selecting-probes)
+  - [Dynamic configuration](#dynamic-configuration)
+  - [CLI parameters](#cli-parameters)
+- [FortiGate setup](#fortigate-setup)
+- [Prometheus setup](#prometheus-setup)
+- [Probe health](#probe-health)
+- [Metrics](#metrics)
+- [Grafana dashboards](#grafana-dashboards)
+- [Building and releases](#building-and-releases)
+- [Known issues](#known-issues)
+- [Upstream, license and legal](#upstream-license-and-legal)
 
-Right now the exporter supports a quite limited set of metrics, but it is very easy to add!
-Open an issue if your favorite metric is missing.
+## What is different in this fork
 
-For example PromQL usage, see [EXAMPLES](EXAMPLES.md).
+- **Container image on GHCR**: `ghcr.io/xozy22/fortigate_exporter`
+  (`linux/amd64`, `linux/arm64`), built on every push to `main`.
+- **Parallel probes**: a scrape takes about as long as the slowest probe
+  instead of the sum of all probes (`-max-concurrency`).
+- **Unavailable instead of failed**: endpoints a FortiGate does not offer
+  (no hardware sensors, BGP/OSPF not configured, ...) no longer set
+  `probe_success` to `0`. They are skipped for an hour instead of being
+  queried and logged on every scrape.
+- **Per-probe metrics**: success, availability and duration of every probe.
+- **No more empty scrapes**: duplicate series (e.g. two Wi-Fi APs with the
+  same name, IPv6 DNS servers) and panicking probes no longer turn the whole
+  scrape into an HTTP 500.
+- **Grafana dashboards** in [`grafana-dashboards/`](grafana-dashboards/).
 
-For Supported metrics see the [metrics documentation](metrics.md).
+See the [CHANGELOG](CHANGELOG.md) for details.
 
-## Usage
+## Quick start with Docker
 
-Example:
+**1. Create an API user** on the FortiGate and note its token, see
+[FortiGate setup](#fortigate-setup).
 
+**2. Create `fortigate-key.yaml`:**
+
+```yaml
+"https://192.168.1.99":
+  token: your-api-token
 ```
-$ ./fortigate_exporter -auth-file ~/fortigate-key.yaml
-# or
-$ docker run -d -p 9710:9710 -v /path/to/fortigate-key.yaml:/config/fortigate-key.yaml quay.io/prometheuscommunity/fortigate-exporter:main-distroless
+
+**3. Run the container** straight from this repository's registry:
+
+```bash
+docker run -d --name fortigate_exporter --restart unless-stopped \
+  -p 9710:9710 \
+  -v "$(pwd)/fortigate-key.yaml:/config/fortigate-key.yaml:ro" \
+  ghcr.io/xozy22/fortigate_exporter:main
 ```
 
-Where `fortigate-key.yaml` contains pairs of FortiGate targets and API keys in the following format:
+The image reads `/config/fortigate-key.yaml` by default. If you pass your own
+arguments after the image name, they replace the defaults, so keep
+`-auth-file /config/fortigate-key.yaml`:
 
+```bash
+docker run ... ghcr.io/xozy22/fortigate_exporter:main \
+  -auth-file /config/fortigate-key.yaml -insecure
 ```
+
+Or with Docker Compose (see [`docker-compose.yml`](docker-compose.yml)):
+
+```yaml
+services:
+  fortigate_exporter:
+    image: ghcr.io/xozy22/fortigate_exporter:main
+    ports:
+      - "9710:9710"
+    volumes:
+      - ./fortigate-key.yaml:/config/fortigate-key.yaml:ro
+    restart: unless-stopped
+```
+
+**4. Test it:**
+
+```bash
+curl 'http://localhost:9710/probe?target=https://192.168.1.99'
+```
+
+You should see `probe_success 1` and lots of `fortigate_*` metrics. The
+exporter's own metrics are available at `http://localhost:9710/metrics`.
+
+### Image tags
+
+| Tag | Content |
+|---|---|
+| `main` | Latest build of the `main` branch |
+| `X.Y.Z`, `X.Y` | Tagged release |
+| `latest` | Most recent tagged release |
+
+The image is based on `distroless/static` and runs as a non-root user, so the
+key file must be readable for others (e.g. `chmod 644 fortigate-key.yaml`) or
+for UID 65532.
+
+## Configuration
+
+### Key file
+
+The key file maps FortiGate targets to API tokens. A target is the scheme,
+host and optional port, exactly as it is passed in the `target` parameter:
+
+```yaml
 "https://my-fortigate":
   token: api-key-goes-here
-  # If you have a smaller fortigate unit you might want
-  # to exclude sensors as they do not have any
-  probes:
-    exclude:
-      - System/SensorInfo
 
 "https://my-other-fortigate:8443":
   token: api-key-goes-here
+  probes:
+    exclude:
+      - System/SensorInfo
 ```
 
-NOTE: Currently only token authentication is supported. FortiGate does not allow usage of tokens on non-HTTPS connections,
-which means that currently you need HTTPS to be configured properly.
+Only token authentication is supported. FortiOS accepts tokens only over
+HTTPS, and the exporter sends them in the `Authorization: Bearer` header, so
+it works with FortiOS 7.4.5+ / 7.6.1+ where tokens in URL parameters are
+disabled by default.
 
-You can select which probes you want to run on a per target basis.
+### Selecting probes
 
-- Probes can be included or excluded under the optional `probes` section by defining `include` and/or `exclude` lists.
-- Each probe name, that can be run by the fortigate exporter, is compared to the `include`/`exclude` lists.
-- Inclusion/exclusion of a probe is based on a prefix match, therefore lists must contains entries starting with a probe name to be included/excluded.
-- Prefix match is case sensitive.
-- `include` list is evaluated before `exclude` list, therefore `exclude` list can exclude a previously included probe.
+Probes can be selected per target with optional `include` and `exclude` lists:
 
-Example:
+- Entries are **case-sensitive prefixes** of probe names, e.g. `System`
+  matches all `System/...` probes.
+- `include` is evaluated first, then `exclude` removes probes again.
+- No `probes` section or an empty `include` list means all probes.
+- `- ''` in `include` includes all probes; `- ''` in `exclude` excludes all.
 
-```
+```yaml
 "https://my-fortigate":
   token: api-key-goes-here
   probes:
@@ -79,191 +155,76 @@ Example:
       - System
       - VPN
       - Firewall/Policies
-      # Include only probes with name starting with: System or VPN + probe: Firewall/Policies
-      # Other probes are excluded because there were not explictly included
 "https://my-other-fortigate:8443":
   token: api-key-goes-here
   probes:
-    exclude:
-      - Wifi
-      - Firewall/LoadBalance
-      # Exclude probes with name starting with: Wifi + probe: Firewall/LoadBalance
-      # All other probes are included by default because include list is empty
-"https://my-other-orther-fortigate:8443":
-  token: api-key-goes-here
-  probes:
     include:
       - System
       - Firewall
     exclude:
       - System/LinkMonitor
-      # Inlcude probes with name starting with: System and Firewall
-      # Then exclude probe: System/LinkMonitor
 ```
 
-Special cases:
-
-- If `probes` isn't set or is empty, all probes will be run against the target.
-- If `include` list is empty, by default, all probes will be selected to be run against the target.
-- If `include` contains an entry `- ''`, then all probes are included (equivalent to not defining `include`)
-- If `exclude` contains an entry `- ''`, then all probes are excluded (equivalent to not defining the target)
-
-
-To probe a FortiGate, do something like `curl 'localhost:9710/probe?target=https://my-fortigate'`
+Probe names are listed in the [permission table](#fortigate-setup).
 
 ### Dynamic configuration
-In use cases where the Fortigates that is to be scraped through the fortigate-exporter is configured in 
-Prometheus using some discovery method it becomes problematic that the `fortigate-key.yaml` configuration also
-has to be updated for each fortigate, and that the fortigate-exporter needs to be restarted on each change. 
-For that scenario the token can be passed as a query parameter, `token`, to the fortigate. 
 
-Example:
+If Prometheus discovers the FortiGates itself, the token can be passed as a
+`token` query parameter instead of being listed in the key file:
+
 ```bash
 curl 'localhost:9710/probe?target=https://192.168.2.31&token=ghi6eItWzWewgbrFMsazvBVwDjZzzb'
 ```
-It is also possible to pass a `profile` query parameter. The value will match an entry in the `fortigate-key.yaml` 
-file, but only to use the `probes` section for include/exclude directives.
 
-Example:
+An additional `profile` parameter uses the `probes` section of a key file
+entry with that name:
+
 ```bash
-curl 'localhost:9710/probe?target=https://192.168.2.31&token=ghi6eItWzWewgbrFMsazvBVwDjZzzb&profile=fs124e'
+curl 'localhost:9710/probe?target=https://192.168.2.31&token=...&profile=fs124e'
 ```
-The `profile=fs124e` would match the following entry in `fortigate-key.yaml`.
 
-Example:
 ```yaml
 fs124e:
-  # token: not used 
+  # token: not used
   probes:
     include:
       - System
       - Firewall
-    exclude:
-      - System/LinkMonitor
 ```
 
+### CLI parameters
 
-
-### Available CLI parameters
-
-| flag  | default value  |  description  |
+| Flag | Default | Description |
 |---|---|---|
-| -auth-file      | fortigate-key.yaml  | path to the location of the key file |
-| -listen         | :9710  | address to listen for incoming requests  |
-| -scrape-timeout | 30     | timeout in seconds  |
-| -https-timeout  | 10     | timeout in seconds for establishment of HTTPS connections  |
-| -insecure       | _not set_  | allows to turn off security validation of TLS certificates  |
-| -extra-ca-certs | (none) | comma-separated files containing extra PEMs to trust for TLS connections in addition to the system trust store |
-| -max-bgp-paths  | 10000  | Sets maximum amount of BGP paths to fetch, value is per IP stack version (IPv4 & IPv6) |
-| -max-vpn-users  | 0      | Sets maximum amount of VPN users to fetch (0 eq. none by default) |
-| -max-concurrency | 4     | How many probes run in parallel against a single target (1 = sequential, as in previous versions) |
-| -unavailable-recheck-interval | 1h | How long probes whose API endpoint is not available on a target are skipped before they are tried again (0 = try on every scrape), see [Probe health](#probe-health) |
+| `-auth-file` | `fortigate-key.yaml` (image: `/config/fortigate-key.yaml`) | Path to the key file |
+| `-listen` | `:9710` | Address to listen on |
+| `-scrape-timeout` | `30` | Maximum duration of a scrape in seconds |
+| `-https-timeout` | `10` | TLS handshake timeout in seconds |
+| `-insecure` | off | Do not verify the FortiGate's TLS certificate |
+| `-extra-ca-certs` | none | Comma-separated PEM files to trust in addition to the system store |
+| `-max-concurrency` | `4` | Probes running in parallel per target (`1` = sequential) |
+| `-unavailable-recheck-interval` | `1h` | How long unavailable probes are skipped before they are tried again (`0` = every scrape) |
+| `-max-bgp-paths` | `10000` | Maximum number of BGP paths to fetch per IP version |
+| `-max-vpn-users` | `0` | Maximum number of VPN users to fetch (`0` = none) |
 
-### Probe health
+## FortiGate setup
 
-Not every FortiGate offers every API endpoint: models without hardware sensors
-answer `system/sensor-info` with `404`, and FortiOS answers the BGP and OSPF
-monitor endpoints with `500` when the routing protocol is not configured.
-
-Such probes are reported as **unavailable** instead of failed, so they no
-longer set `probe_success` to `0`. They are logged once and then skipped for
-`-unavailable-recheck-interval` to save API calls on the FortiGate.
-
-| HTTP status | treated as unavailable for |
-|---|---|
-| 404 Not Found, 424 Failed Dependency | all probes |
-| 500 Internal Server Error | `BGP/*`, `OSPF/*` |
-
-Every other error still marks the probe as failed. Per-probe metrics show
-exactly what happened:
-
-| metric | description |
-|---|---|
-| `fortigate_exporter_probe_success{probe}` | `1` if the probe succeeded, `0` if it failed (not reported for unavailable probes) |
-| `fortigate_exporter_probe_unavailable{probe}` | `1` if the probe's endpoint is not available on the target |
-| `fortigate_exporter_probe_duration_seconds{probe}` | runtime of the probe |
-
-```promql
-# which probes are failing?
-fortigate_exporter_probe_success == 0
-# slowest probes
-topk(5, fortigate_exporter_probe_duration_seconds)
-```
-
-Probes run in parallel (`-max-concurrency`), so a scrape takes roughly as long
-as the slowest probe instead of the sum of all probes. A probe that panics is
-reported as failed instead of aborting the whole scrape, and inconsistent
-metrics from a single probe no longer turn the whole scrape into an HTTP 500.
-
-### FortiGate Configuration
-
-Read permission is enough for Fortigate exporter purpose.
-To improve security, limit permissions to required ones only (least privilege principle).
-
-| probe name | permission | API URL |
-|---|---|---|
-| *Default Global*            | *any*              |api/v2/monitor/system/status |
-|BGP/NeighborPaths/IPv4       | netgrp.route-cfg   |api/v2/monitor/router/bgp/paths |
-|BGP/NeighborPaths/IPv6       | netgrp.route-cfg   |api/v2/monitor/router/bgp/paths6 |
-|BGP/Neighbors/IPv4           | netgrp.route-cfg   |api/v2/monitor/router/bgp/neighbors |
-|BGP/Neighbors/IPv6           | netgrp.route-cfg   |api/v2/monitor/router/bgp/neighbors6 |
-|Firewall/IpPool              | fwgrp.policy       |api/v2/monitor/firewall/ippool |
-|Firewall/LoadBalance         | fwgrp.others       |api/v2/monitor/firewall/load-balance<br>api/v2/cmdb/firewall/vip |
-|Firewall/Policies            | fwgrp.policy       |api/v2/monitor/firewall/policy/select<br>api/v2/monitor/firewall/policy6/select<br>api/v2/cmdb/firewall/policy<br>api/v2/cmdb/firewall/policy6 |
-|License/Status               | *any*              |api/v2/monitor/license/status/select |
-|Log/Fortianalyzer/Status     | loggrp.config      |api/v2/monitor/log/fortianalyzer |
-|Log/Fortianalyzer/Queue      | loggrp.config      |api/v2/monitor/log/fortianalyzer-queue |
-|Log/DiskUsage                | loggrp.config      |api/v2/monitor/log/current-disk-usage |
-|Network/Dns/Latency          | sysgrp.cfg         |api/v2/monitor/network/dns/latency |
-|System/AvailableCertificates | *any*              |api/v2/monitor/system/available-certificates |
-|System/Central-management/Status | sysgrp.cfg         |api/v2/monitor/system/central-management/status|
-|System/Fortimanager/Status   | sysgrp.cfg         |api/v2/monitor/system/fortimanager/status |
-|System/Global/Location       | sysgrp.cfg         |api/v2/cmdb/system/global |
-|System/HAStatistics          | sysgrp.cfg         |api/v2/monitor/system/ha-statistics<br>api/v2/cmdb/system/ha |
-|System/Ha-peer               | sysgrp.cfg         |api/v2/monitor/system/ha-peer |
-|System/Interface             | netgrp.cfg         |api/v2/monitor/system/interface/select |
-|System/Interface/Transceivers| *any*              |api/v2/monitor/system/interface/transceivers |
-|System/LinkMonitor           | sysgrp.cfg         |api/v2/monitor/system/link-monitor |
-|System/Performance/Status    | sysgrp.cfg         |api/v2/monitor/system/performance/status |
-|System/Ntp/Status            | netgrp.cfg         |api/v2/monitor/system/ntp/status |
-|System/Resource/Usage        | sysgrp.cfg         |api/v2/monitor/system/resource/usage |
-|System/Resource/Usage/VDOM   | sysgrp.cfg         |api/v2/monitor/system/resource/usage |
-|System/SensorInfo            | sysgrp.cfg         |api/v2/monitor/system/sensor-info |
-|System/Status                | *any*              |api/v2/monitor/system/status |
-|System/Time/Clock            | sysgrp.cfg         |api/v2/monitor/system/time |
-|System/System/VDOMResource   | sysgrp.cfg         |api/v2/monitor/system/vdom-resource |
-|User/Fsso                    | authgrp            |api/v2/monitor/user/fsso |
-|VPN/IPSec                    | vpngrp             |api/v2/monitor/vpn/ipsec |
-|VPN/Ssl/Connections          | vpngrp             |api/v2/monitor/vpn/ssl |
-|VPN/Ssl/Stats                | vpngrp             |api/v2/monitor/vpn/ssl/stats |
-|VirtualWAN/HealthCheck       | netgrp.cfg         |api/v2/monitor/virtual-wan/health-check |
-|Wifi/APStatus                | wifi               |api/v2/monitor/wifi/ap_status |
-|Wifi/Clients                 | wifi               |api/v2/monitor/wifi/client |
-|Wifi/ManagedAP               | wifi               |api/v2/monitor/wifi/managed_ap |
-|Switch/ManagedSwitch         | switch	           |api/v2/monitor/switch-controller/managed-switch|
-If you omit to grant some of these permissions you will receive log messages warning about
-403 errors and relevant metrics will be unavailable, but other metrics will still work.
-If you do not need some probes to be run, do not grant permission for them and use `include/exclude` feature (see `Usage` section).
-
-The following example Admin Profile describes the permissions that needs to be granted
-to the monitor user in order for all metrics to be available.
+Create a REST API administrator with a read-only admin profile and restrict
+its trusted hosts to the exporter.
 
 ```
 config system accprofile
     edit "monitor"
-        # global scope will fail on non multi-VDOM firewall
+        # global scope fails on firewalls without multi-VDOM
         set scope global
         set authgrp read
-        # As of FortiOS 6.2.1 it seems `fwgrp-permissions.other` is removed,
-        # use 'fwgrp read' to get load balance servers metrics
+        # since FortiOS 6.2.1 use 'fwgrp read' for load balancer metrics
         set fwgrp custom
         set loggrp custom
         set netgrp custom
         set sysgrp custom
         set vpngrp read
         set wifi read
-        # will fail for most recent FortiOS
-        set system-diagnostics disable
         config fwgrp-permission
             set policy read
             set others read
@@ -282,133 +243,208 @@ config system accprofile
 end
 ```
 
-### Prometheus Configuration
+Then create the API user under **System → Administrators → Create New →
+REST API Admin** with this profile and the exporter's IP as trusted host, and
+copy the generated token into the key file.
 
-An example configuration for Prometheus looks something like this:
+Read permission is enough. Grant only what the probes you use need:
+
+| Probe | Permission | API endpoint |
+|---|---|---|
+| *Connectivity test* | *any* | api/v2/monitor/system/status |
+| BGP/NeighborPaths/IPv4 | netgrp.route-cfg | api/v2/monitor/router/bgp/paths |
+| BGP/NeighborPaths/IPv6 | netgrp.route-cfg | api/v2/monitor/router/bgp/paths6 |
+| BGP/Neighbors/IPv4 | netgrp.route-cfg | api/v2/monitor/router/bgp/neighbors |
+| BGP/Neighbors/IPv6 | netgrp.route-cfg | api/v2/monitor/router/bgp/neighbors6 |
+| Firewall/IPPool | fwgrp.policy | api/v2/monitor/firewall/ippool |
+| Firewall/LoadBalance | fwgrp.others | api/v2/monitor/firewall/load-balance<br>api/v2/cmdb/firewall/vip |
+| Firewall/Policies | fwgrp.policy | api/v2/monitor/firewall/policy/select<br>api/v2/monitor/firewall/policy6/select<br>api/v2/cmdb/firewall/policy<br>api/v2/cmdb/firewall/policy6 |
+| License/Status | *any* | api/v2/monitor/license/status/select |
+| Log/Fortianalyzer/Status | loggrp.config | api/v2/monitor/log/fortianalyzer |
+| Log/Fortianalyzer/Queue | loggrp.config | api/v2/monitor/log/fortianalyzer-queue |
+| Log/DiskUsage | loggrp.config | api/v2/monitor/log/current-disk-usage |
+| Network/Dns/Latency | sysgrp.cfg | api/v2/monitor/network/dns/latency |
+| OSPF/Neighbors | netgrp.route-cfg | api/v2/monitor/router/ospf/neighbors |
+| Switch/ManagedSwitch | switch | api/v2/monitor/switch-controller/managed-switch |
+| System/AvailableCertificates | *any* | api/v2/monitor/system/available-certificates |
+| System/Central-Management/Status | sysgrp.cfg | api/v2/monitor/system/central-management/status |
+| System/Fortimanager/Status | sysgrp.cfg | api/v2/monitor/system/fortimanager/status |
+| System/Global/Location | sysgrp.cfg | api/v2/cmdb/system/global |
+| System/HAChecksum | sysgrp.cfg | api/v2/monitor/system/ha-checksums |
+| System/HAStatistics | sysgrp.cfg | api/v2/monitor/system/ha-statistics<br>api/v2/cmdb/system/ha |
+| System/Ha-peer | sysgrp.cfg | api/v2/monitor/system/ha-peer |
+| System/Interface | netgrp.cfg | api/v2/monitor/system/interface/select |
+| System/Interface/Transceivers | *any* | api/v2/monitor/system/interface/transceivers |
+| System/LinkMonitor | sysgrp.cfg | api/v2/monitor/system/link-monitor |
+| System/Ntp/Status | netgrp.cfg | api/v2/monitor/system/ntp/status |
+| System/Performance/Status | sysgrp.cfg | api/v2/monitor/system/performance/status |
+| System/Resource/Usage | sysgrp.cfg | api/v2/monitor/system/resource/usage |
+| System/Resource/Usage/VDOM | sysgrp.cfg | api/v2/monitor/system/resource/usage |
+| System/SDNConnector | sysgrp.cfg | api/v2/monitor/system/sdn-connector/status |
+| System/SensorInfo | sysgrp.cfg | api/v2/monitor/system/sensor-info |
+| System/Status | *any* | api/v2/monitor/system/status |
+| System/Time/Clock | sysgrp.cfg | api/v2/monitor/system/time |
+| System/VDOMResource | sysgrp.cfg | api/v2/monitor/system/vdom-resource |
+| User/Fsso | authgrp | api/v2/monitor/user/fsso |
+| VPN/IPSec | vpngrp | api/v2/monitor/vpn/ipsec |
+| VPN/Ssl/Connections | vpngrp | api/v2/monitor/vpn/ssl |
+| VPN/Ssl/Stats | vpngrp | api/v2/monitor/vpn/ssl/stats |
+| VirtualWAN/HealthCheck | netgrp.cfg | api/v2/monitor/virtual-wan/health-check |
+| WebUI/State | *any* | api/v2/monitor/web-ui/state |
+| Wifi/APStatus | wifi | api/v2/monitor/wifi/ap_status |
+| Wifi/Clients | wifi | api/v2/monitor/wifi/client |
+| Wifi/ManagedAP | wifi | api/v2/monitor/wifi/managed_ap |
+
+A missing permission results in HTTP 403 for that probe: it is reported as
+failed and logged, all other probes keep working. Exclude probes you do not
+need instead of granting their permission.
+
+## Prometheus setup
 
 ```yaml
-  - job_name: 'fortigate_exporter'
+scrape_configs:
+  - job_name: fortigate_exporter
     metrics_path: /probe
+    scrape_interval: 60s
+    scrape_timeout: 30s
     static_configs:
       - targets:
-        - https://my-fortigate
-        - https://my-other-fortigate:8443
+          - https://my-fortigate
+          - https://my-other-fortigate:8443
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
       - source_labels: [__param_target]
         target_label: instance
-        # Drop the https:// and port (if specified) for the 'instance=' label
+        # drop https:// and the port for the instance label
         regex: '(?:.+)(?::\/\/)([^:]*).*'
       - target_label: __address__
-        replacement: '[::1]:9710'
+        replacement: 'fortigate-exporter-host:9710'
 ```
 
-If using [Dynamic configuration](#dynamic-configuration):
+A scrape takes as long as the slowest probe, typically a few seconds (the
+FortiAnalyzer status endpoint alone can take several seconds on the
+FortiGate). Prometheus' default `scrape_timeout` of 10 s is tight; 30 s is a
+safe value. Check the actual duration with `probe_duration_seconds`.
+
+With [dynamic configuration](#dynamic-configuration):
+
 ```yaml
-  - job_name: 'fortigate_exporter'
+  - job_name: fortigate_exporter
     metrics_path: /probe
     file_sd_configs:
       - files:
           - /etc/prometheus/file_sd/fws/*.yml
     params:
       profile:
-      - fs124e
+        - fs124e
     relabel_configs:
-    - source_labels: [__address__]
-      target_label: __param_target
-    - source_labels: [token]
-      target_label: __param_token
-    - source_labels: [__param_target]
-      regex: '(?:.+)(?::\/\/)([^:]*).*'
-      target_label: instance
-    - target_label: __address__
-      replacement: '[::1]:9710'
-    - action: labeldrop
-      regex: token
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [token]
+        target_label: __param_token
+      - source_labels: [__param_target]
+        regex: '(?:.+)(?::\/\/)([^:]*).*'
+        target_label: instance
+      - target_label: __address__
+        replacement: 'fortigate-exporter-host:9710'
+      - action: labeldrop
+        regex: token
 ```
-> Make sure to use the last labeldrop on the `token` label so that the tokens is not be part of your time series.
 
-> Since `token` is a label it will be shown in the Prometheus webgui at `http://<your prometheus>:9090/targets`.
-> 
-> **Make sure you protect your Prometheus if you add the token part of your prometheus config** 
-> 
-> Some options to protect Prometheus:
-> - Only expose UI to localhost --web.listen-address="127.0.0.1:9090"
-> - Basic authentication access - https://prometheus.io/docs/guides/basic-auth/
-> - **It is your responsibility!**
+> The final `labeldrop` keeps the token out of your time series. The token is
+> still visible on the Prometheus targets page, so protect the Prometheus UI
+> (bind to localhost, basic auth, reverse proxy).
 
-### Docker
+## Probe health
 
-You can either use the automatic builds on
-[quay.io](https://quay.io/repository/prometheuscommunity/fortigate_exporter) or build yourself
-like this:
+Not every FortiGate offers every API endpoint: models without hardware sensors
+answer `system/sensor-info` with `404`, and FortiOS answers the BGP and OSPF
+endpoints with `500` when the protocol is not configured. Such probes are
+reported as **unavailable**, logged once and skipped for
+`-unavailable-recheck-interval`.
+
+| HTTP status | Treated as unavailable for |
+|---|---|
+| 404 Not Found, 424 Failed Dependency | all probes |
+| 500 Internal Server Error | `BGP/*`, `OSPF/*` |
+
+Every other error marks the probe as failed and sets `probe_success` to `0`.
+
+| Metric | Description |
+|---|---|
+| `probe_success` | `1` if no probe failed |
+| `probe_duration_seconds` | Duration of the whole scrape |
+| `fortigate_exporter_probe_success{probe}` | `1` = succeeded, `0` = failed (not reported for unavailable probes) |
+| `fortigate_exporter_probe_unavailable{probe}` | `1` if the endpoint is not available on the target |
+| `fortigate_exporter_probe_duration_seconds{probe}` | Duration of the probe |
+
+```promql
+# failing probes
+fortigate_exporter_probe_success == 0
+# slowest probes
+topk(5, fortigate_exporter_probe_duration_seconds)
+```
+
+## Metrics
+
+All metrics are listed in [metrics.md](metrics.md), PromQL examples are in
+[EXAMPLES.md](EXAMPLES.md).
+
+## Grafana dashboards
+
+[`grafana-dashboards/`](grafana-dashboards/) contains two ready-to-import
+dashboards (Grafana 12, dashboard schema v2):
+
+- **`fortigate-modern.json`**: KPI strip on top, details in tabs (overview,
+  WAN & SD-WAN, network, policies, VPN, Wi-Fi, switching, system, exporter)
+- **`fortigate-classic.json`**: classic row-based layout
+
+Import via **Dashboards → New → Import** and select your Prometheus data
+source. Details are in the [dashboard README](grafana-dashboards/README.md).
+
+## Building and releases
+
+Build the binary (Go version from `go.mod`):
 
 ```bash
-docker build -t fortigate_exporter .
-docker run -d -p 9710:9710 -v /path/to/fortigate-key.yaml:/config/fortigate-key.yaml fortigate_exporter
+go build -o fortigate_exporter .
+./fortigate_exporter -auth-file fortigate-key.yaml
 ```
 
-#### Images from forks (GitHub Container Registry)
-
-Forks of this repository publish their own images with the
-[`ghcr-release.yml`](.github/workflows/ghcr-release.yml) workflow:
-every push to `main` updates the `main` tag, every `v*` tag publishes a
-versioned image (`linux/amd64`, `linux/arm64`) plus a GitHub release with
-binaries. For example:
-
-```bash
-docker run -d -p 9710:9710 \
-  -v /path/to/fortigate-key.yaml:/config/fortigate-key.yaml \
-  ghcr.io/xozy22/fortigate_exporter:main -auth-file /config/fortigate-key.yaml
-```
-
-To build the same image locally without `promu`:
+Build the container image locally:
 
 ```bash
 docker build -f Dockerfile.ghcr -t fortigate_exporter .
 ```
 
-#### docker-compose
+The [`ghcr-release.yml`](.github/workflows/ghcr-release.yml) workflow runs the
+tests and publishes the image on every push to `main`. Pushing a tag like
+`v1.26.0` additionally publishes the versioned image and a GitHub release with
+binaries for Linux (amd64, arm64, arm), Windows and macOS.
 
-```yaml
-prometheus_fortigate_exporter:
-  build: ./
-  ports:
-    - 9710:9710
-  volumes:
-    - /path/to/fortigate-key.yaml:/config/fortigate-key.yaml
-  # Applying multiple parameters
-  command: ["-auth-file", "/config/fortigate-key.yaml", "-insecure"]
-  restart: unless-stopped
-```
+## Known issues
 
-## Grafana Dashboards
+- Probing can cause an
+  [httpsd memory leak in FortiOS 6.2.x](https://github.com/prometheus-community/fortigate_exporter/issues/62)
+  ([workaround](https://github.com/prometheus-community/fortigate_exporter/issues/62#issuecomment-798602061)).
+  On such systems use `-max-concurrency 1`.
+- IPsec phase 2 metrics (`fortigate_ipsec_tunnel_*`) only exist while the
+  FortiGate reports phase 2 selectors. Phase 1 counters
+  (`fortigate_ipsec_tunnel_parent_*`) are always available.
 
-Ready-to-import Grafana dashboards (schema v2, Grafana 12) are in
-[`grafana-dashboards/`](grafana-dashboards/): a modern tabbed layout and a
-classic row-based one, both including an exporter health view.
+Missing a metric or found a bug? Please
+[open an issue](https://github.com/xozy22/fortigate_exporter/issues/new).
+As an alternative to this exporter, FortiGates can be polled via SNMP, e.g.
+with the [Prometheus SNMP exporter](https://github.com/prometheus/snmp_exporter),
+within the [limits of FortiOS' SNMP support](https://kb.fortinet.com/kb/documentLink.do?externalID=FD47703).
 
-## Known Issues
+## Upstream, license and legal
 
-This is a collection of known issues that for some reason cannot be fixed,
-but might be possible to work around.
+This fork is based on
+[prometheus-community/fortigate_exporter](https://github.com/prometheus-community/fortigate_exporter),
+originally created by Christian Svensson. Licensed under the
+[Apache License 2.0](LICENSE).
 
- * Probing causing [httpsd memory leak in FortiOS 6.2.x](https://github.com/prometheus-community/fortigate_exporter/issues/62) ([Workaround](https://github.com/prometheus-community/fortigate_exporter/issues/62#issuecomment-798602061)).
-   On such systems consider `-max-concurrency 1` to keep the load on `httpsd` as low as before.
-
-## Missing Metrics?
-
-Please [file an issue](https://github.com/prometheus-community/fortigate_exporter/issues/new) describing what metrics you'd like to see.
-Include as much details as possible please, e.g. how the perfect Prometheus metric would look for your use-case.
-
-An alternative to using this exporter is to use generic SNMP polling, e.g. using a Prometheus SNMP exporter
-([official](https://github.com/prometheus/snmp_exporter), [alternative](https://github.com/dhtech/snmpexporter)).
-Note that there are limitations (e.g. [1](https://kb.fortinet.com/kb/documentLink.do?externalID=FD47703))
-in what FortiGate supports querying via SNMP.
-
-## Legal
-
-Fortinet®, and FortiGate® are registered trademarks of Fortinet, Inc.
-
-This is not an official Fortinet product.
+Fortinet® and FortiGate® are registered trademarks of Fortinet, Inc. This is
+not an official Fortinet product.
