@@ -33,8 +33,7 @@ func (e *HTTPStatusError) Error() string {
 // StatusCode returns the HTTP status code carried by err, if err is (or wraps)
 // an *HTTPStatusError.
 func StatusCode(err error) (int, bool) {
-	var se *HTTPStatusError
-	if errors.As(err, &se) {
+	if se, ok := errors.AsType[*HTTPStatusError](err); ok {
 		return se.StatusCode, true
 	}
 	return 0, false

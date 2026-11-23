@@ -316,9 +316,7 @@ func runProbes(probes []probeDetailedFunc, c fortiHTTP.FortiHTTP, meta *TargetMe
 	jobs := make(chan int)
 	var wg sync.WaitGroup
 	for range concurrency {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for i := range jobs {
 				p := probes[i]
 				if cache.skip(target, p.name) {
@@ -337,7 +335,7 @@ func runProbes(probes []probeDetailedFunc, c fortiHTTP.FortiHTTP, meta *TargetMe
 				}
 				results[i] = res
 			}
-		}()
+		})
 	}
 	for i := range probes {
 		jobs <- i
