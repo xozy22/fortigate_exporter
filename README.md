@@ -20,6 +20,7 @@ Prometheus exporter for FortiGate® firewalls.
     + [Prometheus Configuration](#prometheus-configuration)
     + [Docker](#docker)
       - [docker-compose](#docker-compose)
+  * [Grafana Dashboards](#grafana-dashboards)
   * [Known Issues](#known-issues)
   * [Missing Metrics?](#missing-metrics)
 
@@ -381,6 +382,12 @@ prometheus_fortigate_exporter:
   command: ["-auth-file", "/config/fortigate-key.yaml", "-insecure"]
   restart: unless-stopped
 ```
+
+## Grafana Dashboards
+
+Ready-to-import Grafana dashboards (schema v2, Grafana 12) are in
+[`grafana-dashboards/`](grafana-dashboards/): a modern tabbed layout and a
+classic row-based one, both including an exporter health view.
 
 ## Known Issues
 
