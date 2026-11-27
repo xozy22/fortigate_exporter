@@ -6653,8 +6653,8 @@
         "kind": "Panel",
         "spec": {
           "id": 51,
-          "title": "PoE je Port",
-          "description": "",
+          "title": "PoE · ${fortiswitch}",
+          "description": "Leistung je Port mit PoE-Verbraucher, in Port-Reihenfolge",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -6668,10 +6668,11 @@
                       "group": "prometheus",
                       "version": "v0",
                       "spec": {
-                        "expr": "sort_desc(fortigate_managed_switch_port_power_watt{instance=~\"${firewall}\", switch_name=~\"${fortiswitch}\"} > 0)",
-                        "legendFormat": "{{switch_name}} · {{port}}",
+                        "expr": "label_replace(fortigate_managed_switch_port_power_watt{instance=~\"${firewall}\", switch_name=~\"${fortiswitch}\"} > 0, \"port_no\", \"$1\", \"port\", \"port([0-9]+)\")",
+                        "legendFormat": "",
                         "instant": true,
-                        "range": false
+                        "range": false,
+                        "format": "table"
                       },
                       "labels": {
                         "grafana.app/export-label": "prometheus-1",
@@ -6683,7 +6684,51 @@
                   }
                 }
               ],
-              "transformations": [],
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "convertFieldType",
+                  "spec": {
+                    "options": {
+                      "conversions": [
+                        {
+                          "targetField": "port_no",
+                          "destinationType": "number"
+                        }
+                      ],
+                      "fields": {}
+                    }
+                  }
+                },
+                {
+                  "kind": "Transformation",
+                  "group": "sortBy",
+                  "spec": {
+                    "options": {
+                      "fields": {},
+                      "sort": [
+                        {
+                          "field": "port_no"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "kind": "Transformation",
+                  "group": "filterFieldsByName",
+                  "spec": {
+                    "options": {
+                      "include": {
+                        "names": [
+                          "port",
+                          "Value"
+                        ]
+                      }
+                    }
+                  }
+                }
+              ],
               "queryOptions": {}
             }
           },
@@ -6703,11 +6748,10 @@
                 "minVizWidth": 8,
                 "maxVizHeight": 300,
                 "reduceOptions": {
-                  "calcs": [
-                    "lastNotNull"
-                  ],
-                  "fields": "",
-                  "values": false
+                  "values": true,
+                  "calcs": [],
+                  "fields": "/^Value$/",
+                  "limit": 100
                 },
                 "legend": {
                   "calcs": [],
@@ -10419,10 +10463,15 @@
                                   "x": 6,
                                   "y": 5,
                                   "width": 9,
-                                  "height": 9,
+                                  "height": 8,
                                   "element": {
                                     "kind": "ElementReference",
                                     "name": "panel-51"
+                                  },
+                                  "repeat": {
+                                    "mode": "variable",
+                                    "value": "fortiswitch",
+                                    "direction": "v"
                                   }
                                 }
                               },
