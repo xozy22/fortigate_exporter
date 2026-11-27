@@ -50,7 +50,7 @@
             "group": "prometheus",
             "version": "v0",
             "spec": {
-              "expr": "changes(fortigate_last_reboot_seconds{instance=~\"${firewall}\"}[5m]) > 0",
+              "expr": "fortigate_last_reboot_seconds{instance=~\"${firewall}\"} - (fortigate_last_reboot_seconds{instance=~\"${firewall}\"} offset 10m) > 300",
               "refId": "Anno",
               "titleFormat": "Reboot",
               "textFormat": "FortiGate wurde neu gestartet",
